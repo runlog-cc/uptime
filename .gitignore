@@ -1,0 +1,4 @@
+.uptime-state.json*
+.wrangler/
+node_modules/
+.dev.vars

@@ -1,0 +1,48 @@
+name: External RunLog uptime
+on:
+  schedule:
+    - cron: '3-58/5 * * * *'
+  workflow_dispatch:
+    inputs:
+      mode:
+        type: choice
+        default: production
+        options: [production, drill-fail, drill-recover, drill-stall, drill-transport-fail]
+permissions:
+  contents: read
+concurrency:
+  group: runlog-uptime
+  cancel-in-progress: false
+jobs:
+  observe:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    env:
+      MONITOR_STATE_FILE: .uptime-state.json
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22.22.2'
+      - run: node --test tests/*.test.mjs
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ${{ env.MONITOR_STATE_FILE }}
+          key: uptime-state-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: uptime-state-
+      - name: Observe and report
+        env:
+          MODE: ${{ inputs.mode || 'production' }}
+          MONITOR_URL: ${{ secrets.MONITOR_URL }}
+          MONITOR_SECRET: ${{ secrets.MONITOR_SECRET }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: node reporter.mjs "$MODE"
+      - uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        if: always()
+        with:
+          path: ${{ env.MONITOR_STATE_FILE }}
+          key: uptime-state-${{ github.run_id }}-${{ github.run_attempt }}

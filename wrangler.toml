@@ -1,0 +1,14 @@
+name = "runlog-uptime"
+main = "worker.mjs"
+compatibility_date = "2026-10-22"
+workers_dev = true
+
+[durable_objects]
+bindings = [{ name = "STATE", class_name = "UptimeState" }]
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["UptimeState"]
+
+[triggers]
+crons = ["*/5 * * * *"]
