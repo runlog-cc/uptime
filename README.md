@@ -1,6 +1,6 @@
 # RunLog external uptime
 
-A separate GitHub-hosted runner checks public RunLog health, homepage and published benchmark evidence every five minutes. Each check retries once with a 10-second timeout. Two failed observations open an incident; one healthy observation recovers it. This reads public endpoints only and does not call models, change accounts, or touch application databases.
+A separate GitHub-hosted runner checks public RunLog health, homepage and published benchmark evidence. A five-minute operations-host timer dispatches the production workflow when no recent production run exists; native GitHub scheduling remains a best-effort secondary trigger. Each check retries once with a 10-second timeout. Two failed observations open an incident; one healthy observation recovers it. This reads public endpoints only and does not call models, change accounts, or touch application databases.
 
 A separate Cloudflare Worker stores monitoring state in SQLite Durable Objects. Its five-minute watchdog alerts after 30 minutes without a new signed GitHub observation, including when the reporter never starts. Telegram sends happen on transitions only. Failed notifications remain in a persisted outbox and retry with capped backoff. Authenticated responses include bounded Telegram message-ID receipts; delivery acknowledgment does not prove the owner read a message.
 
@@ -10,9 +10,19 @@ A separate Cloudflare Worker stores monitoring state in SQLite Durable Objects. 
 2. Run `node --test tests/*.test.mjs` under Node 22. The platform CLI regression intentionally skips outside the monorepo. Run `wrangler deploy --dry-run` with the existing operator Wrangler installation, then `wrangler deploy --config wrangler.toml`. This provisions only `runlog-uptime` and its isolated SQLite Durable Objects. No application bindings are present.
 3. Set Worker secrets `MONITOR_SECRET` (random, at least 32 characters), `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` using the operator's existing approved route. Supply values over stdin; do not place them in command arguments, logs, source, or `.dev.vars` committed files. The lead's prepared owner-only JSON lives outside this repository. Never poll `getUpdates` on the existing bot.
 4. Set repository Actions secrets with those same three values and `MONITOR_URL=https://runlog-uptime.fxgarrett.workers.dev`. Do not expose these to PR workflows. The standalone workflow runs only on the default `main` branch via schedule/manual dispatch and has read-only repository permission.
-5. Manually dispatch `production`, then the drills below. Retain signed-report safe receipts from Actions logs and confirm the owner actually receives each alert. Confirm a later scheduled production run succeeds and the Worker cron executes; cron activation can take time. The first cron arms the never-started-reporter watchdog.
+5. Manually dispatch `production`, then the drills below. Retain signed-report safe receipts from Actions logs and confirm the owner actually receives each alert. Confirm an actual operations timer invocation produces a successful `production · server-timer` run, and observe another timer cycle plus Worker cron execution. A manually started service is not automatic-timer proof. Native `event=schedule` evidence must be reported separately; cron activation can take time. The first cron arms the never-started-reporter watchdog.
 
 The reporter needs `MONITOR_STATE_FILE` pointing to a writable persistent JSON file. The workflow restores/saves it with Actions cache even when probes fail. It contains only fallback incident state, not credentials. Direct operator invocation uses the same environment secrets and `node reporter.mjs production`.
+
+## Automatic trigger on the operations host
+
+GitHub's native cron emitted no run objects despite valid eligibility/configuration and a controlled schedule re-registration. The fallback trigger uses the existing operations host's `/usr/bin/gh` login; no GitHub credential is copied to Cloudflare or this repository. The actual probes and signed heartbeat still originate on GitHub. The host cannot mark monitoring healthy merely by dispatching a job.
+
+Create `~/.local/state/runlog-uptime-dispatch` with mode 0700. Substitute the trusted standalone checkout path for `@UPTIME_CHECKOUT@` in `ops/runlog-uptime-dispatch.service`, install that and the timer template under `~/.config/systemd/user/`, reload the user manager and enable/start **the timer**. The existing user manager must have lingering enabled for logout/reboot persistence. Validate the unit's sandbox on the real host before accepting it.
+
+The dispatcher holds a file lock through GET and dispatch. It ignores drills and non-main runs, skips a production observation younger than four minutes or an active job younger than ten minutes, and dispatches only fixed `runlog-cc/uptime`, `uptime.yml`, `main`, `mode=production`, `origin=server-timer`. API/authentication/dispatch failures produce a failed service with generic secret-free logs. Keep its existing GitHub login valid. A host, credential or GitHub outage stops observations; the independent Cloudflare watchdog warns after 30 minutes. This is not a five-minute SLA or proof GitHub's native cron was repaired.
+
+Validate with `python3 -m unittest discover -s ops -p 'test_*.py'`, then retain timer calendar/last-trigger/service-journal evidence alongside the resulting GitHub run and monitor acknowledgement. Observe at least two real timer cycles. The workflow run title identifies production mode and origin, allowing deduplication if native scheduling or an operator also runs it.
 
 ## Safe live drills
 

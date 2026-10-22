@@ -1,0 +1,11 @@
+[Unit]
+Description=Fallback five-minute RunLog external observation dispatcher
+
+[Timer]
+OnCalendar=*-*-* *:01/5:30
+Persistent=true
+AccuracySec=1s
+Unit=runlog-uptime-dispatch.service
+
+[Install]
+WantedBy=timers.target

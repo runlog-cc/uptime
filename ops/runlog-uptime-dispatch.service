@@ -1,0 +1,17 @@
+[Unit]
+Description=Dispatch RunLog external GitHub observations when no recent production run exists
+
+[Service]
+Type=oneshot
+WorkingDirectory=@UPTIME_CHECKOUT@
+ExecStart=/usr/bin/python3 @UPTIME_CHECKOUT@/ops/dispatcher.py
+Environment=GH_PROMPT_DISABLED=1 GIT_TERMINAL_PROMPT=0 GH_PAGER=cat
+TimeoutStartSec=65
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=%h/.local/state/runlog-uptime-dispatch
+RestrictSUIDSGID=true
+LockPersonality=true
