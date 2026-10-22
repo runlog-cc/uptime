@@ -29,3 +29,12 @@ test('transport failure drill is fixed to reserved invalid host and isolated fro
  const recovery=modeConfig('drill-recover','https://real-monitor.example');assert.equal(recovery.namespace,'drill');assert.equal(recovery.url.hostname,'real-monitor.example');
  assert.equal(modeConfig('production','https://real-monitor.example').namespace,'production');assert.throws(()=>modeConfig('force-production-stall','https://real-monitor.example'),/invalid_mode/);
 });
+
+test('fallback persists acknowledged message IDs and preserves them across quiet and failed transitions',async()=>{
+ let calls=0;const send=async()=>({message_id:++calls});let state=await fallback(null,false,'drill',send);
+ assert.equal(state.last_receipt,undefined);state=await fallback(state,false,'drill',send);assert.deepEqual(state.last_receipt,{message_id:1,transition:'down'});
+ state=JSON.parse(JSON.stringify(state));state=await fallback(state,false,'drill',send);assert.equal(calls,1);assert.equal(state.last_receipt.message_id,1);
+ await assert.rejects(fallback(state,true,'drill',async()=>{throw Error('not acknowledged');}));assert.equal(state.last_receipt.message_id,1);assert.equal(state.alerted,true);
+ state=await fallback(state,true,'drill',send);assert.deepEqual(state.last_receipt,{message_id:2,transition:'recovered'});assert.equal(state.alerted,false);
+ state=await fallback(state,true,'drill',send);assert.equal(calls,2);assert.equal(state.last_receipt.message_id,2);
+});
