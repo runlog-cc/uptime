@@ -66,7 +66,7 @@ test('delivery diagnostics expose only static phase and validated numeric codes'
  const env={TELEGRAM_BOT_TOKEN:'private-token',TELEGRAM_CHAT_ID:'123'};
  const fixtures=[
   [{},null,{phase:'configuration',kind:'missing_binding',status:null,api_code:null}],
-  [env,async()=>{throw Error('private-token https://secret.invalid');},{phase:'request',kind:'transport',status:null,api_code:null}],
+  [env,async()=>{throw Error('private-token https://secret.invalid');},{phase:'request',kind:'transport',status:null,api_code:null,runtime_code:'other'}],
   [env,async()=>Response.json({ok:false,error_code:401,description:'private-token'},{status:401}),{phase:'response',kind:'http',status:401,api_code:401}],
   [env,async()=>Response.json({ok:false,error_code:400,description:'private-token'}),{phase:'response',kind:'api',status:200,api_code:400}],
   [env,async()=>new Response('private-token'),{phase:'response',kind:'invalid_body',status:200,api_code:null}]
@@ -75,4 +75,23 @@ test('delivery diagnostics expose only static phase and validated numeric codes'
  const fixture=setup('production',()=>api.sendTelegram(env,'test',async()=>Response.json({ok:false,error_code:401,description:'private-token'},{status:401})));
  await fixture.monitor.report(report('first',false),start);const result=await fixture.monitor.report(report('second',false,'production',start+1000),start+1000);
  assert.equal(result.last_delivery_error.api_code,401);assert.equal(result.delivery_pending,true);assert(!JSON.stringify(result).includes('private-token'));
+});
+test('Telegram transport works without AbortSignal.timeout and retains a bounded cancellation signal',async()=>{
+ const original=AbortSignal.timeout;try{
+  AbortSignal.timeout=undefined;
+  const receipt=await api.sendTelegram({TELEGRAM_BOT_TOKEN:'private-token',TELEGRAM_CHAT_ID:'123'},'test',async(_url,options)=>{assert(options.signal instanceof AbortSignal);return Response.json({ok:true,result:{message_id:2,chat:{id:123}}});});
+  assert.equal(receipt.message_id,2);
+ }finally{AbortSignal.timeout=original;}
+});
+
+test('Telegram uses Workers-supported manual redirect and rejects redirects without following',async()=>{
+ let calls=0;await assert.rejects(api.sendTelegram({TELEGRAM_BOT_TOKEN:'private-token',TELEGRAM_CHAT_ID:'123'},'test',async(_url,options)=>{
+  calls++;assert.equal(options.redirect,'manual');return new Response(null,{status:302,headers:{location:'https://private-token.invalid'}});
+ }),error=>{assert.deepEqual(error.diagnostic,{phase:'response',kind:'http',status:302,api_code:null});return true;});assert.equal(calls,1);
+});
+
+test('runtime failure classification uses a fixed allowlist and hides raw exception text',async()=>{
+ for(const [message,code]of [['Unsupported redirect mode: error private-token','unsupported_redirect'],['Illegal invocation private-token','illegal_invocation'],['private-token https://private.invalid','other']]){
+  await assert.rejects(api.sendTelegram({TELEGRAM_BOT_TOKEN:'private-token',TELEGRAM_CHAT_ID:'123'},'test',async()=>{throw Error(message);}),error=>{assert.equal(error.diagnostic.runtime_code,code);assert(!JSON.stringify(error.diagnostic).includes('private-token'));return true;});
+ }
 });

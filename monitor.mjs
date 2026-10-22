@@ -34,15 +34,16 @@ function deliveryError(phase,kind,status=null,api_code=null){
 function safeDeliveryError(error){
  const d=error?.diagnostic;
  if(!d||!['configuration','request','response','acknowledgment'].includes(d.phase)||!['missing_binding','invalid_binding','transport','invalid_body','http','api','recipient'].includes(d.kind))return {phase:'request',kind:'transport',status:null,api_code:null};
- return {phase:d.phase,kind:d.kind,status:Number.isInteger(d.status)&&d.status>=100&&d.status<=599?d.status:null,api_code:Number.isInteger(d.api_code)&&d.api_code>=100&&d.api_code<=599?d.api_code:null};
+ return {...(d.kind==='transport'?{runtime_code:['unsupported_redirect','illegal_invocation','timeout','other'].includes(d.runtime_code)?d.runtime_code:'other'}:{}),phase:d.phase,kind:d.kind,status:Number.isInteger(d.status)&&d.status>=100&&d.status<=599?d.status:null,api_code:Number.isInteger(d.api_code)&&d.api_code>=100&&d.api_code<=599?d.api_code:null};
 }
 export async function sendTelegram(env,message,fetcher=fetch){
  if(typeof env.TELEGRAM_BOT_TOKEN!=='string'||typeof env.TELEGRAM_CHAT_ID!=='string'||!env.TELEGRAM_BOT_TOKEN||!env.TELEGRAM_CHAT_ID)throw deliveryError('configuration','missing_binding');
  if(env.TELEGRAM_BOT_TOKEN.trim()!==env.TELEGRAM_BOT_TOKEN||!/^[-]?\d+$/.test(env.TELEGRAM_CHAT_ID))throw deliveryError('configuration','invalid_binding');
  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),5000);let response;
- try{response=await fetcher(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`,{method:'POST',redirect:'error',signal:controller.signal,headers:{'content-type':'application/json'},body:JSON.stringify({chat_id:env.TELEGRAM_CHAT_ID,text:message,disable_web_page_preview:true})});}
- catch{clearTimeout(timer);throw deliveryError('request','transport');}
+ try{response=await fetcher(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`,{method:'POST',redirect:'manual',signal:controller.signal,headers:{'content-type':'application/json'},body:JSON.stringify({chat_id:env.TELEGRAM_CHAT_ID,text:message,disable_web_page_preview:true})});}
+ catch(cause){clearTimeout(timer);const error=deliveryError('request','transport'),text=typeof cause?.message==='string'?cause.message.toLowerCase():'';error.diagnostic.runtime_code=text.includes('redirect')&&(text.includes('unsupported')||text.includes('not implemented'))?'unsupported_redirect':text.includes('illegal invocation')?'illegal_invocation':controller.signal.aborted||['AbortError','TimeoutError'].includes(cause?.name)?'timeout':'other';throw error;}
  try{
+  if(response.status>=300&&response.status<400)throw deliveryError('response','http',response.status);
   let body;try{body=JSON.parse(await boundedText(response,16384));}catch{throw deliveryError('response','invalid_body',response.status);}
   const code=Number.isInteger(body.error_code)?body.error_code:null;
   if(!response.ok)throw deliveryError('response','http',response.status,code);
