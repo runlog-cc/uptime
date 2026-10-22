@@ -23,7 +23,7 @@ export async function main(mode='production',env=process.env){
   let accepted=false,receipt=null;try{const response=await fetch(url,{method:'POST',redirect:'error',signal:AbortSignal.timeout(10000),headers:await signReport(report,env.MONITOR_SECRET),body:JSON.stringify(report)});receipt=JSON.parse(await boundedText(response,8192));accepted=response.ok&&receipt.ok===true&&receipt.delivery_pending===false;}catch{}
   try{cache[namespace]=await fallback(cache[namespace],accepted,namespace,message=>sendTelegram(env,message));}catch{failed=true;cache[namespace]={...cache[namespace],failures:Math.max(2,cache[namespace]?.failures||0)};}
   await mkdir(dirname(path),{recursive:true});await writeFile(`${path}.tmp`,JSON.stringify(cache),{mode:0o600});await rename(`${path}.tmp`,path);
-  console.log(JSON.stringify({namespace,run_id:report.run_id,checks,monitor_accepted:accepted,receipts:receipt?.receipts||[]}));
+  console.log(JSON.stringify({namespace,run_id:report.run_id,checks,monitor_accepted:accepted,receipts:receipt?.receipts||[],last_delivery_error:receipt?.last_delivery_error||null}));
   failed||=!accepted||checks.some(c=>!c.ok);
  }
  return failed?1:0;

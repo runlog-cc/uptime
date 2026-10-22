@@ -28,12 +28,28 @@ export async function authenticateReport(request,secret,now=Date.now()){
  if(!await crypto.subtle.verify('HMAC',await key(secret),bytes,encoder.encode(`${time}\n${raw}`)))throw Error('unauthorized');
  let report;try{report=JSON.parse(raw);}catch{invalid();}return validateReport(report,now);
 }
+function deliveryError(phase,kind,status=null,api_code=null){
+ const error=Error('notification_failed');error.diagnostic={phase,kind,status,api_code};return error;
+}
+function safeDeliveryError(error){
+ const d=error?.diagnostic;
+ if(!d||!['configuration','request','response','acknowledgment'].includes(d.phase)||!['missing_binding','invalid_binding','transport','invalid_body','http','api','recipient'].includes(d.kind))return {phase:'request',kind:'transport',status:null,api_code:null};
+ return {phase:d.phase,kind:d.kind,status:Number.isInteger(d.status)&&d.status>=100&&d.status<=599?d.status:null,api_code:Number.isInteger(d.api_code)&&d.api_code>=100&&d.api_code<=599?d.api_code:null};
+}
 export async function sendTelegram(env,message,fetcher=fetch){
+ if(typeof env.TELEGRAM_BOT_TOKEN!=='string'||typeof env.TELEGRAM_CHAT_ID!=='string'||!env.TELEGRAM_BOT_TOKEN||!env.TELEGRAM_CHAT_ID)throw deliveryError('configuration','missing_binding');
+ if(env.TELEGRAM_BOT_TOKEN.trim()!==env.TELEGRAM_BOT_TOKEN||!/^[-]?\d+$/.test(env.TELEGRAM_CHAT_ID))throw deliveryError('configuration','invalid_binding');
+ const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),5000);let response;
+ try{response=await fetcher(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`,{method:'POST',redirect:'error',signal:controller.signal,headers:{'content-type':'application/json'},body:JSON.stringify({chat_id:env.TELEGRAM_CHAT_ID,text:message,disable_web_page_preview:true})});}
+ catch{clearTimeout(timer);throw deliveryError('request','transport');}
  try{
-  const response=await fetcher(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`,{method:'POST',redirect:'error',signal:AbortSignal.timeout(5000),headers:{'content-type':'application/json'},body:JSON.stringify({chat_id:env.TELEGRAM_CHAT_ID,text:message,disable_web_page_preview:true})});
-  const body=JSON.parse(await boundedText(response,16384));if(!response.ok||body.ok!==true||!Number.isInteger(body.result?.message_id)||String(body.result?.chat?.id)!==String(env.TELEGRAM_CHAT_ID))throw Error();
+  let body;try{body=JSON.parse(await boundedText(response,16384));}catch{throw deliveryError('response','invalid_body',response.status);}
+  const code=Number.isInteger(body.error_code)?body.error_code:null;
+  if(!response.ok)throw deliveryError('response','http',response.status,code);
+  if(body.ok!==true)throw deliveryError('response','api',response.status,code);
+  if(!Number.isInteger(body.result?.message_id)||String(body.result?.chat?.id)!==env.TELEGRAM_CHAT_ID)throw deliveryError('acknowledgment','recipient',response.status);
   return {message_id:body.result.message_id};
- }catch{throw Error('notification_failed');}
+ }finally{clearTimeout(timer);}
 }
 export class Monitor{
  constructor({storage,namespace,send}){if(!['production','drill'].includes(namespace))throw Error('namespace');Object.assign(this,{storage,namespace,send});this.queue=Promise.resolve();}
@@ -44,10 +60,10 @@ export class Monitor{
   await this.storage.put('state',s);
   for(let count=0;count<2&&s.outbox.length;count++){
    const event=s.outbox[0];if(event.next>now)break;
-   try{const receipt=await this.send(event.text);s.receipts=[...(s.receipts||[]),{event_id:event.id,message_id:receipt?.message_id||null,delivered_at:new Date(now).toISOString()}].slice(-8);s.outbox.shift();}catch{event.attempts++;event.next=now+Math.min(1800000,60000*2**Math.min(event.attempts,5));await this.storage.put('state',s);break;}
+   try{const receipt=await this.send(event.text);s.receipts=[...(s.receipts||[]),{event_id:event.id,message_id:receipt?.message_id||null,delivered_at:new Date(now).toISOString()}].slice(-8);s.outbox.shift();s.last_delivery_error=null;}catch(error){s.last_delivery_error={...safeDeliveryError(error),event_id:event.id,observed_at:new Date(now).toISOString()};event.attempts++;event.next=now+Math.min(1800000,60000*2**Math.min(event.attempts,5));await this.storage.put('state',s);break;}
    await this.storage.put('state',s);
   }
-  return {ok:true,delivery_pending:s.outbox.length>0,down:s.down,stalled:s.stalled,receipts:s.receipts||[]};
+  return {ok:true,delivery_pending:s.outbox.length>0,down:s.down,stalled:s.stalled,receipts:s.receipts||[],last_delivery_error:s.last_delivery_error||null};
  }
  report(report,now=Date.now()){return this.serial(async()=>{
   validateReport(report,now);if(report.namespace!==this.namespace)throw Error('namespace');const s=await this.load();

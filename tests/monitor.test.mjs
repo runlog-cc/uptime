@@ -61,3 +61,18 @@ test('authentication bounds request size and Telegram rejects a different recipi
  await assert.rejects(api.authenticateReport(new Request('https://monitor.invalid/report',{method:'POST',headers,body:JSON.stringify(value)}),secret,start),/unauthorized/);
  await assert.rejects(api.sendTelegram({TELEGRAM_BOT_TOKEN:'private',TELEGRAM_CHAT_ID:'123'},'test',async()=>Response.json({ok:true,result:{message_id:1,chat:{id:456}}})),/notification_failed/);
 });
+
+test('delivery diagnostics expose only static phase and validated numeric codes',async()=>{
+ const env={TELEGRAM_BOT_TOKEN:'private-token',TELEGRAM_CHAT_ID:'123'};
+ const fixtures=[
+  [{},null,{phase:'configuration',kind:'missing_binding',status:null,api_code:null}],
+  [env,async()=>{throw Error('private-token https://secret.invalid');},{phase:'request',kind:'transport',status:null,api_code:null}],
+  [env,async()=>Response.json({ok:false,error_code:401,description:'private-token'},{status:401}),{phase:'response',kind:'http',status:401,api_code:401}],
+  [env,async()=>Response.json({ok:false,error_code:400,description:'private-token'}),{phase:'response',kind:'api',status:200,api_code:400}],
+  [env,async()=>new Response('private-token'),{phase:'response',kind:'invalid_body',status:200,api_code:null}]
+ ];
+ for(const [config,fetcher,diagnostic]of fixtures)await assert.rejects(api.sendTelegram(config,'test',fetcher),error=>{assert.equal(error.message,'notification_failed');assert.deepEqual(error.diagnostic,diagnostic);return true;});
+ const fixture=setup('production',()=>api.sendTelegram(env,'test',async()=>Response.json({ok:false,error_code:401,description:'private-token'},{status:401})));
+ await fixture.monitor.report(report('first',false),start);const result=await fixture.monitor.report(report('second',false,'production',start+1000),start+1000);
+ assert.equal(result.last_delivery_error.api_code,401);assert.equal(result.delivery_pending,true);assert(!JSON.stringify(result).includes('private-token'));
+});
