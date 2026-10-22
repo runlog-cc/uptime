@@ -25,6 +25,8 @@ Dispatch modes in order and inspect each job's output/Telegram delivery:
 
 Dispatch `drill-transport-fail` to verify the independent GitHub fallback: it performs two observations and forces only its drill report transport to the reserved `https://monitor-unavailable.invalid` host. Expect one **[DRILL] monitor transport DOWN** alert. Repeat to verify silence, then dispatch `drill-recover` using the same restored state cache: expect one transport recovery alert. This is an operator-triggered message test; no application outage or configuration change is needed. Tests cover the same fallback state transitions and notification failures without network traffic.
 
+Completed drills do not arm a later automatic heartbeat alarm. Scheduled drill ticks retry already queued notifications only; heartbeat-expiry tests require the explicit drill-stall mode.
+
 ## Limits and maintenance
 
 GitHub schedules can run late or be dropped; this is bounded operational monitoring, not a five-minute SLA. Public scheduled workflows disable after 60 days without repository activity: the independent Worker watchdog alerts when that happens. An operator must restore the schedule. Cloudflare cron and GitHub must not both fail silently; simultaneous outages of both providers, Telegram, or the owner's device can prevent delivery. Keep platform billing/account alerts enabled separately.

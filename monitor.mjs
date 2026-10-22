@@ -79,5 +79,5 @@ export class Monitor{
   return this.flush(s,now);
  });}
  stale(s,now){if(s.heartbeat_at!==null&&now-s.heartbeat_at>STALE_MS&&!s.stalled){s.stalled=true;this.event(s,'RunLog external monitor STALLED: no new GitHub observation for 30 minutes. Check scheduled Actions and the reporter.',now);}}
- tick(now=Date.now()){return this.serial(async()=>{const s=await this.load();if(s.heartbeat_at===null&&this.namespace==='production')s.heartbeat_at=now;this.stale(s,now);return this.flush(s,now);});}
+ tick(now=Date.now()){return this.serial(async()=>{const s=await this.load();if(this.namespace==='production'){if(s.heartbeat_at===null)s.heartbeat_at=now;this.stale(s,now);}return this.flush(s,now);});}
 }

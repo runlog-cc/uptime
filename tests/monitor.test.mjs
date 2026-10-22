@@ -95,3 +95,13 @@ test('runtime failure classification uses a fixed allowlist and hides raw except
   await assert.rejects(api.sendTelegram({TELEGRAM_BOT_TOKEN:'private-token',TELEGRAM_CHAT_ID:'123'},'test',async()=>{throw Error(message);}),error=>{assert.equal(error.diagnostic.runtime_code,code);assert(!JSON.stringify(error.diagnostic).includes('private-token'));return true;});
  }
 });
+
+test('finished drill does not create later heartbeat alarms while drill outbox still retries',async()=>{
+ const healthy=setup('drill');await healthy.monitor.report(report('finished',true,'drill'),start);
+ await healthy.monitor.tick(start+31*60000);assert.equal(healthy.sent.length,0);assert.equal(healthy.values.get('state').stalled,false);
+ let fail=true;const pending=setup('drill',async()=>{if(fail)throw Error('temporary failure');});
+ await pending.monitor.report({...report('expire',true,'drill'),expire_heartbeat:true},start);
+ assert.equal(pending.sent.length,0);assert.equal(pending.values.get('state').outbox.length,1);
+ fail=false;await pending.monitor.tick(start+31*60000);assert.equal(pending.sent.length,1);assert.match(pending.sent[0],/STALLED/);assert.equal(pending.values.get('state').outbox.length,0);
+ await pending.monitor.tick(start+62*60000);assert.equal(pending.sent.length,1);
+});
