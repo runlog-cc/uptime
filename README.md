@@ -1,10 +1,8 @@
 # RunLog Uptime
 
 An inspectable example of operating a deployed application: semantic HTTP probes,
-signed observations, persisted incidents and recovery alerts. Built and maintained
-by **Vasco Lacerda** for the [free RunLog toolkit](https://runlog.cc).
-
-[About the developer](https://runlog.cc/about) · [Discuss a role or project](mailto:hello@runlog.cc?subject=Role%20or%20project%20discussion)
+signed observations, persisted incidents and recovery alerts. Part of the
+[free RunLog toolkit](https://runlog.cc).
 
 [Offline verification workflow and runs](https://github.com/runlog-cc/uptime/actions/workflows/verify.yml)
 
@@ -69,3 +67,9 @@ by this repository. [MIT License](LICENSE).
 secret-handling and maintenance instructions. It is intentionally separate from
 the offline reviewer path. This documentation update does not deploy the Worker,
 change its production schedule or send an alert.
+
+## Author
+
+Built and maintained by **Francisco Garrett**.
+
+[About the developer](https://runlog.cc/about) · [Discuss a role or project](mailto:hello@runlog.cc?subject=Role%20or%20project%20discussion)
