@@ -38,3 +38,8 @@ test('fallback persists acknowledged message IDs and preserves them across quiet
  state=await fallback(state,true,'drill',send);assert.deepEqual(state.last_receipt,{message_id:2,transition:'recovered'});assert.equal(state.alerted,false);
  state=await fallback(state,true,'drill',send);assert.equal(calls,2);assert.equal(state.last_receipt.message_id,2);
 });
+test('work benchmark probe accepts complete anonymous aggregates and rejects invalid or empty rows',()=>{
+ const body={schema:'runlog.work-benchmark.v1',task_count:9,models:[{id:'vendor/model',quality:90,mean_answer_usd:.001,median_seconds:2}]};
+ assert.equal(semantic('benchmark',JSON.stringify(body)),true);
+ for(const models of [[],[{...body.models[0],quality:101}],[{...body.models[0],mean_answer_usd:-1}],[{...body.models[0],median_seconds:0}]])assert.equal(semantic('benchmark',JSON.stringify({...body,models})),false);
+});
