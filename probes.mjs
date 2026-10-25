@@ -3,6 +3,7 @@ export function healthy(body){return body?.ok===true&&typeof(body.release_sha||b
 export function semantic(name,text){
  try{if(name==='home')return /<html[\s>]/i.test(text)&&/<title>RunLog[^<]*Cost and safety tools for AI agents<\/title>/i.test(text)&&['pricer','loop-guard','ship-check','benchmark'].every(path=>new RegExp(`href=["']/${path}/["']`,'i').test(text));
  const body=JSON.parse(text);if(name==='health')return healthy(body);
+ if(body.schema==='runlog.work-benchmark.v1'){const num=n=>typeof n==='number'&&Number.isFinite(n)&&n>=0;return body.task_count===9&&Array.isArray(body.models)&&body.models.length>0&&body.models.every(m=>typeof m.id==='string'&&num(m.quality)&&m.quality<=100&&num(m.mean_answer_usd)&&num(m.median_seconds)&&m.median_seconds>0);}
  return body.version==='runlog.public-benchmarks.v3'&&typeof body.run?.id==='string'&&body.run.summary?.graded>0&&Array.isArray(body.models)&&body.models.some(m=>typeof m.id==='string'&&m.summary?.graded>0);
  }catch{return false;}
 }
